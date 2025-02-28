@@ -1,13 +1,19 @@
-from rest_framework.generics import ListAPIView
+from .permissions import IsOwnerOrAdmin
+from user_auth_app.models import UserProfile
+from django.shortcuts import get_object_or_404
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.generics import RetrieveUpdateAPIView
+from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from user_auth_app.models import UserProfile
 from .serializers import ProfileSerializer
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .serializers import LoginSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from .serializers import RegistrationSerializer
+from .permissions import IsOwnerOrAdmin
 
 
 class RegistrationView(APIView):
@@ -20,6 +26,7 @@ class RegistrationView(APIView):
     - Ensures that only custom serializer error messages are used.
     - Returns correct HTTP status codes and error formats.
     """
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         serializer = RegistrationSerializer(data=request.data)
@@ -49,6 +56,7 @@ class LoginView(APIView):
     - If authentication succeeds, returns a token and user details.
     - If authentication fails, returns an error message in the correct API format.
     """
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         serializer = LoginSerializer(data=request.data)
@@ -60,9 +68,9 @@ class LoginView(APIView):
             return Response(
                 {
                     "token": token.key,
-                    "user_id": user.id,
                     "username": user.username,
-                    "email": user.email
+                    "email": user.email,
+                    "user_id": user.id
                 },
                 status=status.HTTP_200_OK
             )
@@ -70,33 +78,45 @@ class LoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ProfileView(APIView):
+class ProfileDetailView(RetrieveUpdateAPIView):
     """
     Handles retrieving and updating user profiles.
+    - Any authenticated user can retrieve profiles.
+    - Only the owner can update their profile.
     """
+    queryset = UserProfile.objects.all()
+    serializer_class = ProfileSerializer
 
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        """
+        Get requests require the user to be authenticated.
+        Patch requests require the user to be authenticated and to be the owner of the profile.
+        """
+        if self.request.method in ["PATCH", "PUT"]:
+            return [IsAuthenticated(), IsOwnerOrAdmin()]
+        return [IsAuthenticated()]
 
-    def get(self, request):
+    def get_object(self):
         """
-        Returns the user's profile details.
+        Overrides the standard `get_object` to ensure users can only access their own profile.
         """
-        profile = request.user.userprofile
-        serializer = ProfileSerializer(profile)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        if self.request.method in ["PATCH", "PUT"]:
+            return get_object_or_404(UserProfile, user=self.request.user)
+        return super().get_object()
 
-    def patch(self, request):
+    def patch(self, request, *args, **kwargs):
         """
-        Updates the user's profile.
+        Updates the authenticated user's profile.
+        Only the profile owner can perform this action.
         """
-        profile = request.user.userprofile
-        serializer = ProfileSerializer(
-            profile, data=request.data, partial=True)
+        instance = self.get_object()
+        self.check_object_permissions(request, instance)
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=True)
 
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
-
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

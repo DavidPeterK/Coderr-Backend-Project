@@ -67,22 +67,21 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
+    username = serializers.CharField(required=True)
     password = serializers.CharField(write_only=True, required=True)
 
     def validate(self, data):
         """ 
-        Validates the user credentials according to the API specifications.
-        If authentication fails, an error is raised in the expected format.
+        Validates user credentials according to the API specifications.
         """
-        email = data.get("email")
+        username = data.get("username")
         password = data.get("password")
 
-        user = authenticate(username=email, password=password)
+        user = authenticate(username=username, password=password)
 
         if not user:
             raise serializers.ValidationError(
-                {"email": ["E-Mail oder Passwort ist falsch."]})
+                {"username": ["Benutzername oder Passwort ist falsch."]})
 
         data["user"] = user
         return data
@@ -90,10 +89,33 @@ class LoginSerializer(serializers.Serializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
-    email = serializers.EmailField(source="user.email", read_only=True)
+    email = serializers.EmailField(
+        source="user.email", required=True)
+    first_name = serializers.CharField(
+        source="user.first_name", required=False)
+    last_name = serializers.CharField(source="user.last_name", required=False)
 
     class Meta:
         model = UserProfile
-        fields = ("username", "email", "file", "location", "tel",
-                  "description", "working_hours", "type", "created_at", "updated_at")
-        read_only_fields = ("type", "created_at", "updated_at")
+        fields = (
+            "user", "username", "email", "first_name", "last_name", "file",
+            "location", "tel", "description", "working_hours", "type",
+            "created_at", "updated_at"
+        )
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
+            raise serializers.ValidationError(
+                "Diese E-Mail-Adresse wird bereits verwendet.")
+        return value
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        user = instance.user
+
+        for field in ['first_name', 'last_name', 'email']:
+            if field in user_data:
+                setattr(user, field, user_data[field])
+
+        user.save()
+        return super().update(instance, validated_data)

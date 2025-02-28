@@ -34,8 +34,6 @@ ALLOWED_HOSTS = ['*']
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-AUTH_USER_MODEL = 'user_auth_app.UserProfile'
-
 
 # Application definition
 
@@ -49,6 +47,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'user_auth_app',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
