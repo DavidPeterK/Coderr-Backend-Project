@@ -89,8 +89,7 @@ class LoginSerializer(serializers.Serializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
-    email = serializers.EmailField(
-        source="user.email", required=True)
+    email = serializers.EmailField(source="user.email", required=False)
     first_name = serializers.CharField(
         source="user.first_name", required=False)
     last_name = serializers.CharField(source="user.last_name", required=False)
@@ -102,14 +101,32 @@ class ProfileSerializer(serializers.ModelSerializer):
             "location", "tel", "description", "working_hours", "type",
             "created_at", "updated_at"
         )
+        read_only_fields = ['user', 'created_at', 'updated_at']
 
     def validate_email(self, value):
+        """
+        Validiert, ob die E-Mail-Adresse bereits verwendet wird.
+        """
         if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
             raise serializers.ValidationError(
-                "Diese E-Mail-Adresse wird bereits verwendet.")
+                "Diese E-Mail-Adresse wird bereits verwendet."
+            )
+        return value
+
+    def validate_tel(self, value):
+        """
+        Validiert, ob die Telefonnummer ein gültiges Format hat.
+        """
+        if value and not value.isdigit():
+            raise serializers.ValidationError(
+                "Die Telefonnummer darf nur Zahlen enthalten."
+            )
         return value
 
     def update(self, instance, validated_data):
+        """
+        Aktualisiert das UserProfile und die zugehörigen User-Daten.
+        """
         user_data = validated_data.pop('user', {})
         user = instance.user
 
@@ -118,4 +135,9 @@ class ProfileSerializer(serializers.ModelSerializer):
                 setattr(user, field, user_data[field])
 
         user.save()
-        return super().update(instance, validated_data)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        return instance

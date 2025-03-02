@@ -1,18 +1,12 @@
-from .permissions import IsOwnerOrAdmin
 from user_auth_app.models import UserProfile
 from django.shortcuts import get_object_or_404
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
-from user_auth_app.models import UserProfile
-from .serializers import ProfileSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .serializers import LoginSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from .serializers import RegistrationSerializer
+from .serializers import RegistrationSerializer, ProfileSerializer, LoginSerializer
 from .permissions import IsOwnerOrAdmin
 
 

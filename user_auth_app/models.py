@@ -12,11 +12,12 @@ class UserProfile(models.Model):
     type = models.CharField(max_length=10, choices=TYPES, blank=False)
     file = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
     location = models.CharField(max_length=100, default='')
-    tel = models.CharField(max_length=15, default='')
-    description = models.TextField(default='')
-    working_hours = models.CharField(max_length=50, default='')
+    tel = models.CharField(max_length=15, default='', blank=True, null=True)
+    description = models.TextField(default='', blank=True, null=True)
+    working_hours = models.CharField(
+        max_length=50, default='', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.type}"
+        return f"{self.user.first_name} {self.user.last_name} ({self.type})"
