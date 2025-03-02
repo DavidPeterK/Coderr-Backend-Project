@@ -2,13 +2,11 @@ from django.contrib.auth import authenticate
 from user_auth_app.models import UserProfile
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(
-        write_only=True, required=True, validators=[validate_password])
+    password = serializers.CharField(write_only=True, required=True)
     repeated_password = serializers.CharField(write_only=True, required=True)
     type = serializers.ChoiceField(choices=UserProfile.TYPES, required=True)
 
@@ -16,34 +14,31 @@ class RegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ("username", "email", "password", "repeated_password", "type")
 
-    def validate_email(self, value):
-        """ 
-        Checks if the provided email already exists in the database.
-        If the email is already registered, a validation error is raised.
-        """
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError(
-                ["Diese E-Mail-Adresse wird bereits verwendet."])
-        return value
-
-    def validate_username(self, value):
-        """ 
-        Checks if the provided username is already taken.
-        If the username exists, a validation error is returned.
-        """
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError(
-                ["Dieser Benutzername ist bereits vergeben."])
-        return value
-
     def validate(self, data):
-        """ 
-        Ensures that the provided password and repeated password match.
-        If they do not match, a validation error is raised.
-        """
-        if data["password"] != data["repeated_password"]:
-            raise serializers.ValidationError(
-                {"password": ["Das Passwort und das wiederholte Passwort stimmen nicht überein."]})
+        errors = {}
+
+        if not data.get('username'):
+            errors['username'] = ["Benutzername ist erforderlich."]
+        if not data.get('email'):
+            errors['email'] = ["E-Mail ist erforderlich."]
+        if not data.get('password'):
+            errors['password'] = ["Passwort ist erforderlich."]
+        if not data.get('repeated_password'):
+            errors['repeated_password'] = [
+                "Wiederholtes Passwort ist erforderlich."]
+
+        if data.get('password') != data.get('repeated_password'):
+            errors['password'] = [
+                "Das Passwort ist nicht gleich mit dem wiederholten Passwort."]
+
+        if User.objects.filter(username=data.get('username')).exists():
+            errors['username'] = ["Dieser Benutzername ist bereits vergeben."]
+        if User.objects.filter(email=data.get('email')).exists():
+            errors['email'] = ["Diese E-Mail-Adresse wird bereits verwendet."]
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
         return data
 
     def create(self, validated_data):
@@ -67,23 +62,27 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField(required=True)
-    password = serializers.CharField(write_only=True, required=True)
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        """ 
-        Validates user credentials according to the API specifications.
-        """
-        username = data.get("username")
-        password = data.get("password")
+        username = data.get('username')
+        password = data.get('password')
 
-        user = authenticate(username=username, password=password)
-
-        if not user:
+        if username and password:
+            user = authenticate(username=username, password=password)
+            if user:
+                if not user.is_active:
+                    raise serializers.ValidationError(
+                        {"detail": ["Benutzerkonto ist deaktiviert."]})
+                data['user'] = user
+            else:
+                raise serializers.ValidationError(
+                    {"detail": ["Falsche Anmeldedaten."]})
+        else:
             raise serializers.ValidationError(
-                {"username": ["Benutzername oder Passwort ist falsch."]})
+                {"detail": ["Benutzername und Passwort sind erforderlich."]})
 
-        data["user"] = user
         return data
 
 
@@ -99,34 +98,36 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = (
             "user", "username", "email", "first_name", "last_name", "file",
             "location", "tel", "description", "working_hours", "type",
-            "created_at", "updated_at"
+            "created_at", "updated_at", "uploaded_at"
         )
-        read_only_fields = ['user', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'created_at', 'updated_at', 'uploaded_at']
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+
+        if instance.type == 'customer':
+            representation.pop('working_hours', None)
+            representation.pop('tel', None)
+            representation.pop('description', None)
+            representation.pop('location', None)
+        elif instance.type == 'business':
+            representation.pop('uploaded_at', None)
+
+        return representation
 
     def validate_email(self, value):
-        """
-        Validiert, ob die E-Mail-Adresse bereits verwendet wird.
-        """
         if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
             raise serializers.ValidationError(
-                "Diese E-Mail-Adresse wird bereits verwendet."
-            )
+                {"email": ["Diese E-Mail-Adresse wird bereits verwendet."]})
         return value
 
     def validate_tel(self, value):
-        """
-        Validiert, ob die Telefonnummer ein gültiges Format hat.
-        """
         if value and not value.isdigit():
             raise serializers.ValidationError(
-                "Die Telefonnummer darf nur Zahlen enthalten."
-            )
+                {"tel": ["Die Telefonnummer darf nur Zahlen enthalten."]})
         return value
 
     def update(self, instance, validated_data):
-        """
-        Aktualisiert das UserProfile und die zugehörigen User-Daten.
-        """
         user_data = validated_data.pop('user', {})
         user = instance.user
 
